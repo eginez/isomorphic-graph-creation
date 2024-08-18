@@ -1,0 +1,20 @@
+[package]
+name = "isomorphic-graph-creation"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+num = "0.4.3"
+rayon = "1.10.0"
+rustworkx-core = "0.15.1"
+rand = "0.8.5"
+
+[dev-dependencies]
+rstest = "0.22.0"
+criterion = { version = "0.5.1", features = ["html_reports"] }
+
+[[bench]]
+name = "benchmarks"
+harness = false
+
+
