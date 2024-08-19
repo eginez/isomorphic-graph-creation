@@ -1,41 +1,41 @@
+use num::{self, One};
+use num::{Integer, Unsigned};
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use std::collections::HashSet;
 use std::hash::Hash;
 use std::iter::Product;
+use std::ops::Add;
 
-use num::{self, PrimInt};
-use num::{Integer, Unsigned};
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
-
-pub fn factorial<T>(n: T) -> T
-where
-    T: Integer + PrimInt + Product + Unsigned,
-{
-    if n.is_zero() {
-        return T::one();
+fn _build_hashset<R: Hash + Eq + PartialOrd + Add<Output = R> + One + Clone>(
+    start: R,
+    end: R,
+) -> HashSet<R> {
+    let mut result = HashSet::new();
+    let mut current = start.clone();
+    while current <= end {
+        result.insert(current.clone());
+        current = current + R::one();
     }
-    num::range_inclusive(T::one(), n).product()
+    result
 }
-pub fn binomial_coefficient<T>(n: T, r: T) -> T
+pub fn binomial_coefficient<T>(n: &T, r: &T) -> T
 where
-    T: Integer + PrimInt + Unsigned + for<'a> Product<&'a T> + Hash
+    T: Integer + Unsigned + for<'a> Product<&'a T> + Hash + Clone,
 {
-    let first_list : HashSet<T> = num::range_inclusive(r + T::one(), n).collect();
-    let second_list : HashSet<T> = num::range_inclusive(T::one(), n - r).collect();
+    let start = r.clone() + T::one();
+    let first_list = _build_hashset(start, n.clone());
+    let second_list = _build_hashset(T::one(), n.clone() - r.clone());
     let numerator = first_list.difference(&second_list);
     let denominator = second_list.difference(&first_list);
     numerator.product::<T>() / denominator.product::<T>()
 }
 
-pub fn unrank_combination_single(
-    set: &Vec<u64>,
-    mut subset_size: u64,
-    mut rank: u64,
-) -> Vec<u64> {
-    let mut combination:Vec<u64> = vec![];
+pub fn unrank_combination_single(set: &Vec<u64>, mut subset_size: u64, mut rank: u64) -> Vec<u64> {
+    let mut combination: Vec<u64> = vec![];
     let mut i: usize = 0;
     let n = set.len() as u64;
     loop {
-        let c = binomial_coefficient(n - (i as u64 + 1), subset_size - 1);
+        let c = binomial_coefficient(&(n - (i as u64 + 1)), &(subset_size - 1));
         if rank < c {
             combination.push(set[i]);
             subset_size -= 1;
@@ -53,7 +53,7 @@ pub fn unrank_combination_single(
     combination
 }
 pub fn unrank(set: &Vec<u64>, subset_size: u64) -> Vec<Vec<u64>> {
-    let num_combinations = binomial_coefficient(set.len() as u64, subset_size);
+    let num_combinations = binomial_coefficient(&(set.len() as u64), &subset_size);
     (0..num_combinations)
         .into_iter()
         .map(|pos| unrank_combination_single(set, subset_size, pos))
@@ -61,7 +61,7 @@ pub fn unrank(set: &Vec<u64>, subset_size: u64) -> Vec<Vec<u64>> {
 }
 
 pub fn unrank_parallel(set: &Vec<u64>, subset_size: u64) -> Vec<Vec<u64>> {
-    let num_combinations = binomial_coefficient(set.len() as u64, subset_size);
+    let num_combinations = binomial_coefficient(&(set.len() as u64), &subset_size);
     (0..num_combinations)
         .into_par_iter()
         .map(|pos| unrank_combination_single(set, subset_size, pos))
@@ -70,19 +70,11 @@ pub fn unrank_parallel(set: &Vec<u64>, subset_size: u64) -> Vec<Vec<u64>> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use num::{BigUint, FromPrimitive};
     use rand::rngs::StdRng;
     use rand::{Rng, SeedableRng};
-    use super::*;
     use rstest::*;
-
-    #[rstest]
-    #[case(0, 1)]
-    #[case(1, 1)]
-    #[case(2, 2)]
-    #[case(3, 6)]
-    fn test_factorial(#[case] number: u64, #[case] result: u64) {
-        assert_eq!(factorial(number), result);
-    }
 
     #[rstest]
     #[case(2, 1, 2)]
@@ -90,8 +82,17 @@ mod tests {
     #[case(3, 2, 3)]
     #[case(2, 0, 1)]
     #[case(20, 5, 15504)]
+    #[case(40, 2, 780)]
     fn test_binomial_coefficient(#[case] n: u64, #[case] r: u64, #[case] result: u64) {
-        assert_eq!(binomial_coefficient(n, r), result);
+        assert_eq!(binomial_coefficient(&n, &r), result);
+    }
+
+    #[rstest]
+    #[case(100, 10, 17310309456440)]
+    fn test_binomial_coefficient_bigint(#[case] n: u32, #[case] r: u32, #[case] result: u64) {
+        let n_big = BigUint::from(n);
+        let r_big = BigUint::from(r);
+        assert_eq!(binomial_coefficient(&n_big, &r_big), BigUint::from(result));
     }
 
     #[rstest]
