@@ -1,10 +1,16 @@
 use num::{self, One};
 use num::{Integer, Unsigned};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use rustworkx_core::generators::gnp_random_graph;
+use rustworkx_core::petgraph::algo::is_isomorphic;
+use rustworkx_core::petgraph::dot::{Config, Dot};
+use rustworkx_core::petgraph::graph::UnGraph;
 use std::collections::HashSet;
+use std::fs;
 use std::hash::Hash;
 use std::iter::Product;
 use std::ops::Add;
+use std::process::Command;
 
 fn _build_hashset<R: Hash + Eq + PartialOrd + Add<Output = R> + One + Clone>(
     start: R,
@@ -68,6 +74,26 @@ pub fn unrank_parallel(set: &Vec<u64>, subset_size: u64) -> Vec<Vec<u64>> {
         .collect()
 }
 
+pub fn create_random_graph(node_count: usize, seed: Option<u64>) -> UnGraph<(), ()> {
+    gnp_random_graph(node_count, 0.5, seed, || (), || ()).unwrap()
+}
+
+pub fn dot_graph(graph: &UnGraph<(), ()>, config: &[Config], filename: &str) {
+    let dot_repr = format!("{:?}", Dot::with_config(graph, config));
+    let dot_filename = format!("{}.dot", filename);
+    let png_filename = format!("{}.png", filename);
+    std::fs::write(dot_filename.clone(), dot_repr).unwrap();
+    let command = "dot";
+    let arguments = ["-Tpng", &dot_filename, "-o", &png_filename];
+
+    let output = Command::new(command)
+        .args(&arguments)
+        .output()
+        .expect("Should have worked");
+
+    print!("{:?}", &output)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -75,6 +101,14 @@ mod tests {
     use rand::rngs::StdRng;
     use rand::{Rng, SeedableRng};
     use rstest::*;
+
+    #[test]
+    fn test_random_graph() {
+        let g = create_random_graph(5, None);
+        let g2 = create_random_graph(4, None);
+
+        assert!(is_isomorphic(&g, &g2))
+    }
 
     #[rstest]
     #[case(2, 1, 2)]
