@@ -89,9 +89,11 @@ pub fn dot_graph(graph: &UnGraph<(), ()>, config: &[Config], filename: &str) {
     let output = Command::new(command)
         .args(&arguments)
         .output()
-        .expect("Should have worked");
+        .expect("Should have worked, do you have graphviz installed?");
 
-    print!("{:?}", &output)
+    if !output.status.success() {
+        print!("Failed to write png file");
+    }
 }
 
 #[cfg(test)]
