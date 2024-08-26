@@ -6,7 +6,6 @@ use rustworkx_core::petgraph::algo::is_isomorphic;
 use rustworkx_core::petgraph::dot::{Config, Dot};
 use rustworkx_core::petgraph::graph::UnGraph;
 use std::collections::HashSet;
-use std::fs;
 use std::hash::Hash;
 use std::iter::Product;
 use std::ops::Add;
@@ -75,7 +74,43 @@ pub fn unrank_parallel(set: &Vec<u64>, subset_size: u64) -> Vec<Vec<u64>> {
 }
 
 pub fn create_random_graph(node_count: usize, seed: Option<u64>) -> UnGraph<(), ()> {
-    gnp_random_graph(node_count, 0.5, seed, || (), || ()).unwrap()
+    let graph: UnGraph<(), ()> = gnp_random_graph(node_count, 0.5, seed, || (), || ()).unwrap();
+    // TODO need to add label to retain the index.
+    graph
+}
+
+pub fn generate_subgraph_single(
+    graph: &UnGraph<(), ()>,
+    subgraph_size: u64,
+    combination_index: u64,
+) -> Option<UnGraph<(), ()>> {
+    let graph_set: Vec<u64> = graph.node_indices().map(|n| n.index() as u64).collect();
+    let new_nodes: HashSet<u64> =
+        unrank_combination_single(&graph_set, subgraph_size, combination_index)
+            .iter()
+            .cloned()
+            .collect();
+    let mut subgraph = graph.clone();
+    for node in subgraph.node_indices() {
+        if !new_nodes.contains(&(node.index() as u64)) {
+            subgraph.remove_node(node);
+        }
+    }
+
+    return Some(subgraph);
+}
+
+pub fn generate_subgraph_parallel(
+    graph: &UnGraph<(), ()>,
+    subgraph_size: u64,
+    subgraph_count: u64,
+) -> Vec<UnGraph<(), ()>> {
+    // TODO subgraph count is less than all combinatorial
+    (0..subgraph_count)
+        .into_par_iter()
+        .map(|rank| generate_subgraph_single(graph, subgraph_size, rank))
+        .filter_map(|g| g)
+        .collect()
 }
 
 pub fn dot_graph(graph: &UnGraph<(), ()>, config: &[Config], filename: &str) {
@@ -103,14 +138,6 @@ mod tests {
     use rand::rngs::StdRng;
     use rand::{Rng, SeedableRng};
     use rstest::*;
-
-    #[test]
-    fn test_random_graph() {
-        let g = create_random_graph(5, None);
-        let g2 = create_random_graph(4, None);
-
-        assert!(is_isomorphic(&g, &g2))
-    }
 
     #[rstest]
     #[case(2, 1, 2)]
@@ -179,5 +206,31 @@ mod tests {
         let input = _create_random_input(40);
         let all_results: Vec<Vec<u64>> = unrank_parallel(&input, 2);
         assert!(all_results.len() > 0)
+    }
+
+    #[rstest]
+    #[case(4, 3, 0)]
+    //#[case(4, 3, 1)]
+    fn test_generate_subgraph(
+        #[case] graph_size: usize,
+        #[case] subgraph_size: u64,
+        #[case] rank: u64,
+    ) {
+        let graph = create_random_graph(graph_size, Some(10));
+        let subgraph = generate_subgraph_single(&graph, subgraph_size, rank).unwrap();
+        let expected_nodes = unrank_combination_single(
+            &graph.node_indices().map(|n| n.index() as u64).collect(),
+            subgraph_size,
+            rank,
+        );
+
+        assert_eq!(subgraph_size as usize, subgraph.node_count());
+        assert_eq!(
+            expected_nodes,
+            subgraph
+                .node_indices()
+                .map(|n| n.index() as u64)
+                .collect::<Vec<_>>()
+        );
     }
 }
