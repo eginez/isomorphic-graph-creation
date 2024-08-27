@@ -1,4 +1,4 @@
 /target
 .idea
-graph1.dot
-graph1.png
+*.dot
+*.png

@@ -2,7 +2,7 @@ use num::{self, One};
 use num::{Integer, Unsigned};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use rustworkx_core::generators::gnp_random_graph;
-use rustworkx_core::petgraph::algo::is_isomorphic;
+//use rustworkx_core::petgraph::algo::is_isomorphic;
 use rustworkx_core::petgraph::dot::{Config, Dot};
 use rustworkx_core::petgraph::graph::UnGraph;
 use std::collections::HashSet;
@@ -105,7 +105,11 @@ pub fn generate_subgraph_parallel(
     subgraph_size: u64,
     subgraph_count: u64,
 ) -> Vec<UnGraph<(), ()>> {
-    // TODO subgraph count is less than all combinatorial
+    let max_count = binomial_coefficient(&(graph.node_count() as u64), &subgraph_size);
+    if subgraph_count >= max_count {
+        panic!("Too many combinations");
+    }
+
     (0..subgraph_count)
         .into_par_iter()
         .map(|rank| generate_subgraph_single(graph, subgraph_size, rank))
@@ -134,7 +138,7 @@ pub fn dot_graph(graph: &UnGraph<(), ()>, config: &[Config], filename: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use num::{BigUint, FromPrimitive};
+    use num::{BigUint};
     use rand::rngs::StdRng;
     use rand::{Rng, SeedableRng};
     use rstest::*;
