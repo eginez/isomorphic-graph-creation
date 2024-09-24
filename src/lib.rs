@@ -5,11 +5,48 @@ use rustworkx_core::generators::gnp_random_graph;
 use rustworkx_core::petgraph::algo::is_isomorphic;
 use rustworkx_core::petgraph::dot::{Config, Dot};
 use rustworkx_core::petgraph::graph::UnGraph;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::iter::Product;
 use std::ops::Add;
 use std::process::Command;
+use std::sync::RwLock;
+
+struct NumberCache<V>
+{
+    data: RwLock<HashMap<(V, V), V>>,
+    data_loader: fn(&V, &V) -> V
+}
+
+impl <V>  NumberCache<V>
+where V: Integer + Unsigned + for<'a> Product<&'a V> + Hash + Clone,
+{
+    pub fn new(loader_function: fn(&V, &V) -> V) -> Self {
+        NumberCache {
+            data: RwLock::new(HashMap::new()),
+            data_loader: loader_function,
+        }
+    }
+
+    fn _get(&self, key: (&V, &V)) -> Option<V>{
+        let mut map = self.data.read().unwrap();
+        let new_key = (key.0.clone(), key.1.clone());
+        map.get(&new_key).cloned()
+    }
+    fn _insert(&self, key: (&V, &V)) -> Option<V>{
+        let mut map = self.data.write().unwrap();
+        let new_key = (key.0.clone(), key.1.clone());
+        map.insert(new_key.clone(), (self.data_loader)(&new_key.0, &new_key.1))
+    }
+
+
+    pub fn get(&self, key: (&V, &V)) -> Option<V> {
+        match self._get(key) {
+            None => self._insert(key),
+            Some(t) => Some(t)
+        }
+    }
+}
 
 fn _build_hashset<R: Hash + Eq + PartialOrd + Add<Output = R> + One + Clone>(
     start: R,
@@ -232,5 +269,14 @@ mod tests {
                 .map(|n| n.index() as u64)
                 .collect::<Vec<_>>()
         );
+    }
+
+    fn test_cache () {
+        let fn1 = |x:&u8, y:&u8| *x+*y;
+        let mut cache = NumberCache::new(fn1);
+        let two = 2u8;
+        let input = (&two, &two);
+        let val = cache.get(input);
+        assert_eq!(4, val.unwrap())
     }
 }
