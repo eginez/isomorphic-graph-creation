@@ -147,7 +147,7 @@ pub fn generate_subgraph_single(
         }
     }
 
-    return Some(subgraph);
+    Some(subgraph)
 }
 
 pub fn generate_subgraph_parallel(
