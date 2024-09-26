@@ -12,14 +12,14 @@ use std::ops::Add;
 use std::process::Command;
 use std::sync::RwLock;
 
-struct NumberCache<V>
-{
+struct NumberCache<V> {
     data: RwLock<HashMap<(V, V), V>>,
-    data_loader: fn(&V, &V) -> V
+    data_loader: fn(&V, &V) -> V,
 }
 
-impl <V>  NumberCache<V>
-where V: Integer + Unsigned + for<'a> Product<&'a V> + Hash + Clone,
+impl<V> NumberCache<V>
+where
+    V: Integer + Unsigned + for<'a> Product<&'a V> + Hash + Clone,
 {
     pub fn new(loader_function: fn(&V, &V) -> V) -> Self {
         NumberCache {
@@ -28,22 +28,23 @@ where V: Integer + Unsigned + for<'a> Product<&'a V> + Hash + Clone,
         }
     }
 
-    fn _get(&self, key: (&V, &V)) -> Option<V>{
+    fn _get(&self, key: (&V, &V)) -> Option<V> {
         let mut map = self.data.read().unwrap();
         let new_key = (key.0.clone(), key.1.clone());
         map.get(&new_key).cloned()
     }
-    fn _insert(&self, key: (&V, &V)) -> Option<V>{
+    fn _insert(&self, key: (&V, &V)) -> V {
         let mut map = self.data.write().unwrap();
         let new_key = (key.0.clone(), key.1.clone());
-        map.insert(new_key.clone(), (self.data_loader)(&new_key.0, &new_key.1))
+        let new_value = (self.data_loader)(&new_key.0, &new_key.1);
+        map.insert(new_key.clone(), new_value.clone());
+        new_value
     }
 
-
-    pub fn get(&self, key: (&V, &V)) -> Option<V> {
+    pub fn get(&self, key: (&V, &V)) -> V {
         match self._get(key) {
             None => self._insert(key),
-            Some(t) => Some(t)
+            Some(t) => t,
         }
     }
 }
@@ -72,12 +73,21 @@ where
     numerator.product::<T>() / denominator.product::<T>()
 }
 
-pub fn unrank_combination_single(set: &Vec<u64>, mut subset_size: u64, mut rank: u64) -> Vec<u64> {
+pub fn unrank_combination_single(
+    set: &Vec<u64>,
+    mut subset_size: u64,
+    mut rank: u64,
+    cache: Option<&NumberCache<u64>>,
+) -> Vec<u64> {
     let mut combination: Vec<u64> = vec![];
     let mut i: usize = 0;
     let n = set.len() as u64;
     loop {
-        let c = binomial_coefficient(&(n - (i as u64 + 1)), &(subset_size - 1));
+        let parameters = (&(n - (i as u64 + 1)), &(subset_size - 1));
+        let c = cache.map_or_else(
+            || binomial_coefficient(parameters.0, parameters.1),
+            |c| c.get(parameters),
+        );
         if rank < c {
             combination.push(set[i]);
             subset_size -= 1;
@@ -96,17 +106,19 @@ pub fn unrank_combination_single(set: &Vec<u64>, mut subset_size: u64, mut rank:
 }
 pub fn unrank(set: &Vec<u64>, subset_size: u64) -> Vec<Vec<u64>> {
     let num_combinations = binomial_coefficient(&(set.len() as u64), &subset_size);
+    let cache = NumberCache::new(binomial_coefficient);
     (0..num_combinations)
         .into_iter()
-        .map(|pos| unrank_combination_single(set, subset_size, pos))
+        .map(|pos| unrank_combination_single(set, subset_size, pos, Some(&cache)))
         .collect()
 }
 
 pub fn unrank_parallel(set: &Vec<u64>, subset_size: u64) -> Vec<Vec<u64>> {
     let num_combinations = binomial_coefficient(&(set.len() as u64), &subset_size);
+    //let cache = NumberCache::new(binomial_coefficient);
     (0..num_combinations)
         .into_par_iter()
-        .map(|pos| unrank_combination_single(set, subset_size, pos))
+        .map(|pos| unrank_combination_single(set, subset_size, pos, None))
         .collect()
 }
 
@@ -120,10 +132,11 @@ pub fn generate_subgraph_single(
     graph: &UnGraph<(), ()>,
     subgraph_size: u64,
     combination_index: u64,
+    cache: Option<&NumberCache<u64>>,
 ) -> Option<UnGraph<(), ()>> {
     let graph_set: Vec<u64> = graph.node_indices().map(|n| n.index() as u64).collect();
     let new_nodes: HashSet<u64> =
-        unrank_combination_single(&graph_set, subgraph_size, combination_index)
+        unrank_combination_single(&graph_set, subgraph_size, combination_index, cache)
             .iter()
             .cloned()
             .collect();
@@ -143,9 +156,10 @@ pub fn generate_subgraph_parallel(
     subgraph_count: u64,
 ) -> Vec<UnGraph<(), ()>> {
     // TODO subgraph count is less than all combinatorial
+    let cache = NumberCache::new(binomial_coefficient);
     (0..subgraph_count)
         .into_par_iter()
-        .map(|rank| generate_subgraph_single(graph, subgraph_size, rank))
+        .map(|rank| generate_subgraph_single(graph, subgraph_size, rank, Some(&cache)))
         .filter_map(|g| g)
         .collect()
 }
@@ -205,7 +219,7 @@ mod tests {
         #[case] r: u64,
         #[case] res: Vec<u64>,
     ) {
-        assert_eq!(unrank_combination_single(&set, subset_size, r), res);
+        assert_eq!(unrank_combination_single(&set, subset_size, r, None), res);
     }
 
     #[test]
@@ -254,11 +268,13 @@ mod tests {
         #[case] rank: u64,
     ) {
         let graph = create_random_graph(graph_size, Some(10));
-        let subgraph = generate_subgraph_single(&graph, subgraph_size, rank).unwrap();
+        let cache = NumberCache::new(binomial_coefficient);
+        let subgraph = generate_subgraph_single(&graph, subgraph_size, rank, Some(&cache)).unwrap();
         let expected_nodes = unrank_combination_single(
             &graph.node_indices().map(|n| n.index() as u64).collect(),
             subgraph_size,
             rank,
+            Some(&cache),
         );
 
         assert_eq!(subgraph_size as usize, subgraph.node_count());
@@ -271,12 +287,13 @@ mod tests {
         );
     }
 
-    fn test_cache () {
-        let fn1 = |x:&u8, y:&u8| *x+*y;
+    fn test_cache() {
+        let fn1 = |x: &u8, y: &u8| *x + *y;
         let mut cache = NumberCache::new(fn1);
         let two = 2u8;
         let input = (&two, &two);
         let val = cache.get(input);
-        assert_eq!(4, val.unwrap())
+        assert!(4 == val);
+        assert!(4 == val)
     }
 }
