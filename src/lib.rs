@@ -1,15 +1,19 @@
-use num::{self, One};
+
+use num::{self, BigUint, One};
 use num::{Integer, Unsigned};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use rustworkx_core::generators::gnp_random_graph;
 //use rustworkx_core::petgraph::algo::is_isomorphic;
 use rustworkx_core::petgraph::dot::{Config, Dot};
 use rustworkx_core::petgraph::graph::UnGraph;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::iter::Product;
 use std::ops::Add;
 use std::process::Command;
+use crate::cache::Cache;
+
+mod cache;
 
 fn _build_hashset<R: Hash + Eq + PartialOrd + Add<Output = R> + One + Clone>(
     start: R,
@@ -23,16 +27,27 @@ fn _build_hashset<R: Hash + Eq + PartialOrd + Add<Output = R> + One + Clone>(
     }
     result
 }
+
+static CACHE_MAP: cache::Cache<(BigUint, BigUint), BigUint> = std::sync::LazyLock::new(|| Cache::new());
+
 pub fn binomial_coefficient<T>(n: &T, r: &T) -> T
 where
     T: Integer + Unsigned + for<'a> Product<&'a T> + Hash + Clone,
 {
+
+    let key = (BigUint::from(n), BigUint::from(r));
+    let val = CACHE_MAP.get(key.clone());
+    if val.is_some() {
+        return val.unwrap()
+    }
     let start = r.clone() + T::one();
     let first_list = _build_hashset(start, n.clone());
     let second_list = _build_hashset(T::one(), n.clone() - r.clone());
     let numerator = first_list.difference(&second_list);
     let denominator = second_list.difference(&first_list);
-    numerator.product::<T>() / denominator.product::<T>()
+    let result = numerator.product::<T>() / denominator.product::<T>();
+    CACHE_MAP.insert(key, BigUint::from(result.clone()));
+    result
 }
 
 pub fn unrank_combination_single(set: &Vec<u64>, mut subset_size: u64, mut rank: u64) -> Vec<u64> {

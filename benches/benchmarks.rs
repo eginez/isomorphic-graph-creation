@@ -19,14 +19,14 @@ fn criterion_benchmark(c: &mut Criterion) {
     group.measurement_time(Duration::new(10, 0));
     group.sample_size(10);
 
-    const GRAPH_SIZE: u32 = 22;
+    const GRAPH_SIZE: u32 = 20;
     const SUBSET_SIZE: u64 = 10;
-    const SUBGRAPH_COUNT: u64 = 100;
+    const SUBGRAPH_COUNT: u64 = 1000;
     let input = _create_random_input(GRAPH_SIZE);
-    group.bench_function("single_unrank", |b| b.iter(|| unrank(&input, SUBSET_SIZE)));
-    group.bench_function("parallel_unrank", |b| {
-        b.iter(|| unrank_parallel(&input, SUBSET_SIZE))
-    });
+    //group.bench_function("single_unrank", |b| b.iter(|| unrank(&input, SUBSET_SIZE)));
+    //group.bench_function("parallel_unrank", |b| {
+    //    b.iter(|| unrank_parallel(&input, SUBSET_SIZE))
+    //});
     group.bench_function("parallel_subgraph", |b| {
         b.iter(|| generate_subgraph_parallel(&create_random_graph(GRAPH_SIZE as usize, Some(100)), SUBSET_SIZE, SUBGRAPH_COUNT))
     });
