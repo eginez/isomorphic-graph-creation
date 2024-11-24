@@ -12,8 +12,8 @@ use std::iter::Product;
 use std::ops::Add;
 use std::process::Command;
 use crate::cache::Cache;
-
 mod cache;
+
 
 fn _build_hashset<R: Hash + Eq + PartialOrd + Add<Output = R> + One + Clone>(
     start: R,
@@ -50,12 +50,21 @@ where
     result
 }
 
-pub fn unrank_combination_single(set: &Vec<u64>, mut subset_size: u64, mut rank: u64) -> Vec<u64> {
+pub fn unrank_combination_single(
+    set: &Vec<u64>,
+    mut subset_size: u64,
+    mut rank: u64,
+    cache: Option<&NumberCache<u64>>,
+) -> Vec<u64> {
     let mut combination: Vec<u64> = vec![];
     let mut i: usize = 0;
     let n = set.len() as u64;
     loop {
-        let c = binomial_coefficient(&(n - (i as u64 + 1)), &(subset_size - 1));
+        let parameters = (&(n - (i as u64 + 1)), &(subset_size - 1));
+        let c = cache.map_or_else(
+            || binomial_coefficient(parameters.0, parameters.1),
+            |c| c.get(parameters),
+        );
         if rank < c {
             combination.push(set[i]);
             subset_size -= 1;
@@ -74,17 +83,19 @@ pub fn unrank_combination_single(set: &Vec<u64>, mut subset_size: u64, mut rank:
 }
 pub fn unrank(set: &Vec<u64>, subset_size: u64) -> Vec<Vec<u64>> {
     let num_combinations = binomial_coefficient(&(set.len() as u64), &subset_size);
+    let cache = NumberCache::new(binomial_coefficient);
     (0..num_combinations)
         .into_iter()
-        .map(|pos| unrank_combination_single(set, subset_size, pos))
+        .map(|pos| unrank_combination_single(set, subset_size, pos, Some(&cache)))
         .collect()
 }
 
 pub fn unrank_parallel(set: &Vec<u64>, subset_size: u64) -> Vec<Vec<u64>> {
     let num_combinations = binomial_coefficient(&(set.len() as u64), &subset_size);
+    //let cache = NumberCache::new(binomial_coefficient);
     (0..num_combinations)
         .into_par_iter()
-        .map(|pos| unrank_combination_single(set, subset_size, pos))
+        .map(|pos| unrank_combination_single(set, subset_size, pos, None))
         .collect()
 }
 
@@ -98,10 +109,11 @@ pub fn generate_subgraph_single(
     graph: &UnGraph<(), ()>,
     subgraph_size: u64,
     combination_index: u64,
+    cache: Option<&NumberCache<u64>>,
 ) -> Option<UnGraph<(), ()>> {
     let graph_set: Vec<u64> = graph.node_indices().map(|n| n.index() as u64).collect();
     let new_nodes: HashSet<u64> =
-        unrank_combination_single(&graph_set, subgraph_size, combination_index)
+        unrank_combination_single(&graph_set, subgraph_size, combination_index, cache)
             .iter()
             .cloned()
             .collect();
@@ -112,7 +124,7 @@ pub fn generate_subgraph_single(
         }
     }
 
-    return Some(subgraph);
+    Some(subgraph)
 }
 
 pub fn generate_subgraph_parallel(
@@ -120,14 +132,11 @@ pub fn generate_subgraph_parallel(
     subgraph_size: u64,
     subgraph_count: u64,
 ) -> Vec<UnGraph<(), ()>> {
-    let max_count = binomial_coefficient(&(graph.node_count() as u64), &subgraph_size);
-    if subgraph_count >= max_count {
-        panic!("Too many combinations");
-    }
-
+    // TODO subgraph count is less than all combinatorial
+    let cache = NumberCache::new(binomial_coefficient);
     (0..subgraph_count)
         .into_par_iter()
-        .map(|rank| generate_subgraph_single(graph, subgraph_size, rank))
+        .map(|rank| generate_subgraph_single(graph, subgraph_size, rank, Some(&cache)))
         .filter_map(|g| g)
         .collect()
 }
@@ -187,7 +196,7 @@ mod tests {
         #[case] r: u64,
         #[case] res: Vec<u64>,
     ) {
-        assert_eq!(unrank_combination_single(&set, subset_size, r), res);
+        assert_eq!(unrank_combination_single(&set, subset_size, r, None), res);
     }
 
     #[test]
@@ -236,11 +245,13 @@ mod tests {
         #[case] rank: u64,
     ) {
         let graph = create_random_graph(graph_size, Some(10));
-        let subgraph = generate_subgraph_single(&graph, subgraph_size, rank).unwrap();
+        let cache = NumberCache::new(binomial_coefficient);
+        let subgraph = generate_subgraph_single(&graph, subgraph_size, rank, Some(&cache)).unwrap();
         let expected_nodes = unrank_combination_single(
             &graph.node_indices().map(|n| n.index() as u64).collect(),
             subgraph_size,
             rank,
+            Some(&cache),
         );
 
         assert_eq!(subgraph_size as usize, subgraph.node_count());
@@ -251,5 +262,15 @@ mod tests {
                 .map(|n| n.index() as u64)
                 .collect::<Vec<_>>()
         );
+    }
+
+    fn test_cache() {
+        let fn1 = |x: &u8, y: &u8| *x + *y;
+        let mut cache = NumberCache::new(fn1);
+        let two = 2u8;
+        let input = (&two, &two);
+        let val = cache.get(input);
+        assert!(4 == val);
+        assert!(4 == val)
     }
 }
